@@ -1,0 +1,82 @@
+# voice-dictate
+
+Windows 上的本地语音听写：按住鼠标侧键说话，松开后识别结果直接以键盘输入的方式打进当前窗口。全程本地运行，不联网。
+
+## 用法
+
+- **按住鼠标前侧键**说话，松开结束
+- 或 **Ctrl+Alt+Space** 开始，再按一次结束
+- 录音或识别过程中按 **Esc**（或点一下浮窗）取消
+
+屏幕底部会出现一个浮窗：说话时显示实时音量，识别时显示扫光提示；麦克风打不开或只录到静音时会直接给出提示，而不是干等。
+
+## 组成
+
+| 文件 | 作用 |
+|---|---|
+| `stt-server.js` | 常驻的本地识别服务（Node，监听 127.0.0.1:8377）：用 ffmpeg 采集麦克风，用 sherpa-onnx 跑 SenseVoice 模型 |
+| `dictate.cs` | 客户端源码（WinForms）：全局鼠标钩子、热键、分层窗口浮窗，识别结果用 SendInput 打出去 |
+| `build.ps1` | 把 `dictate.cs` 编译成 `voice-dictate.exe` |
+
+客户端启动时会先探测 8377 端口，服务没起就自己拉起来（无窗口）。客户端本身是 GUI 程序，没有控制台窗口。
+
+## 依赖
+
+- Windows 10 / 11
+- [Node.js](https://nodejs.org/)
+- [ffmpeg](https://ffmpeg.org/)，需要在 `PATH` 里（用它的 dshow 采集麦克风）
+- sherpa-onnx 的 Windows Node 插件（`sherpa-onnx-win-x64`）
+- SenseVoice 模型（`model.int8.onnx` + `tokens.txt`），支持中 / 英 / 日 / 韩 / 粤
+
+插件和模型都不在本仓库里。默认按 Orca 客户端自带的位置找：
+
+- 插件：`%LOCALAPPDATA%\Programs\orca\resources\node_modules\sherpa-onnx-win-x64`
+- 模型：`%APPDATA%\orca\speech-models\sense-voice-zh-en-ja-ko-yue`
+
+放在别处就在 `config.json` 里改。
+
+## 构建与运行
+
+必须用 **Windows PowerShell 5.1**（PowerShell 7 的 `Add-Type` 不支持 `-OutputAssembly`）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build.ps1
+.\voice-dictate.exe
+```
+
+开机自启：在 `shell:startup` 里放一个指向 `voice-dictate.exe` 的快捷方式。
+
+## 配置
+
+同目录下放 `config.json`（可选，所有键都可省略）：
+
+```json
+{
+  "mouseButton": "side2",
+  "sherpaModule": "D:/somewhere/sherpa-onnx-win-x64",
+  "modelDir": "D:/somewhere/sense-voice-zh-en-ja-ko-yue",
+  "ffmpeg": "ffmpeg",
+  "port": 8377
+}
+```
+
+`mouseButton`：`side2` 前侧键（默认）、`side1` 后侧键、`none` 只用热键。
+
+麦克风不用配置，跟随 Windows 当前的默认录音设备。
+
+## 服务端接口
+
+只监听本机：
+
+| 接口 | 说明 |
+|---|---|
+| `GET /start?device=<录音端点 GUID>` | 开始录音；麦克风打不开时返回 500 和 ffmpeg 的原始报错 |
+| `GET /stop` | 停止并返回识别文本；只录到静音时返回 422 `SILENT` |
+| `GET /cancel` | 停止并丢弃 |
+| `GET /level` | 当前输入电平 0–100（按 -60dBFS…0dBFS 映射） |
+| `GET /state` / `GET /ping` | 状态 / 存活检查 |
+
+## 致谢
+
+- 识别模型 [SenseVoice](https://github.com/FunAudioLLM/SenseVoice)，运行时 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)
+- 浮窗的音量条和"识别中"扫光分别移植自 [react-bits](https://github.com/DavidHDev/react-bits) 的 `SlicedWaves` 与 `ShinyText`
