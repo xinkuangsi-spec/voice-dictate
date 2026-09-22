@@ -464,6 +464,7 @@ public class App : ApplicationContext {
 
     [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
     [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWindowsHookEx(int id, HookProc fn, IntPtr mod, uint thread);
+    [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hk);
     [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hk, int code, IntPtr w, IntPtr l);
     [DllImport("kernel32.dll", CharSet = CharSet.Auto)] static extern IntPtr GetModuleHandle(string name);
     [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint mod, uint vk);
@@ -536,6 +537,20 @@ public class App : ApplicationContext {
     void HookLoop() {
         hookRef = new HookProc(MouseHook);
         hook = SetWindowsHookEx(WH_MOUSE_LL, hookRef, GetModuleHandle(null), 0);
+        // Windows silently drops a low-level hook whose callback once runs past LowLevelHooksTimeout
+        // (seen after the machine had been up a day and a half), and never says so. Re-arm it while
+        // idle: new hook first, then the old one, so no event slips through the gap.
+        System.Windows.Forms.Timer rearm = new System.Windows.Forms.Timer();
+        rearm.Interval = 60000;
+        rearm.Tick += delegate {
+            if (want) return;   // mid-press: swapping hooks here could lose the button-up
+            IntPtr fresh = SetWindowsHookEx(WH_MOUSE_LL, hookRef, GetModuleHandle(null), 0);
+            if (fresh == IntPtr.Zero) return;
+            IntPtr old = hook;
+            hook = fresh;
+            UnhookWindowsHookEx(old);
+        };
+        rearm.Start();
         Application.Run();   // a low-level hook only fires while its own thread pumps messages
     }
 

@@ -21,6 +21,7 @@ const SAMPLE_RATE = 16000;
 const CHUNK_SAMPLES = SAMPLE_RATE * 30; // sherpa offline decode window
 const SILENT_PEAK = 0.001;             // -60 dBFS; a muted or dead mic never gets near this
 const START_TIMEOUT_MS = 5000;
+const DSHOW_AUDIO_CACHE = "HKCU\\Software\\Microsoft\\ActiveMovie\\devenum 64-bit\\{33D9A762-90C8-11D0-BD43-00A0C911CE86}";
 const GUID = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i;
 
 const sherpa = require(cfg.sherpaModule);
@@ -159,7 +160,16 @@ http.createServer(async (req, res) => {
         await startRecording(device);
         return send(200, "REC");
       } catch (err) {
-        return send(500, err.message);
+        if (!/Could not find audio only device/.test(err.message)) return send(500, err.message);
+        // dshow's device cache can keep a headset's old endpoint GUID after it is re-paired or
+        // moved to another USB port; dropping the cache makes dshow re-enumerate on the next open
+        await new Promise((done) => spawn("reg", ["delete", DSHOW_AUDIO_CACHE, "/f"]).once("close", done).once("error", done));
+        try {
+          await startRecording(device);
+          return send(200, "REC");
+        } catch (retryErr) {
+          return send(500, retryErr.message);
+        }
       }
     }
     case "/stop": {
