@@ -347,6 +347,9 @@ public class Overlay : Form {
     [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr hdc);
     [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr hDC, IntPtr hObject);
     [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr hObject);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+    const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOACTIVATE = 0x10;
 
     readonly Look look = new Look();
     readonly System.Windows.Forms.Timer frame = new System.Windows.Forms.Timer();
@@ -394,6 +397,9 @@ public class Overlay : Form {
             hideAt = ms > 0 ? now.AddMilliseconds(ms) : DateTime.MaxValue;
             wanted = true;
             if (!Visible) Show();
+            // WS_EX_TOPMOST from CreateParams only holds at creation: the window was found sitting
+            // below an ordinary Edge window while still flagged topmost. Re-assert on every show.
+            SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             frame.Start();
             Tick();
         });
