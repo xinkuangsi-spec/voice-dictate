@@ -14,7 +14,7 @@ Windows 上的本地语音听写：按住鼠标侧键说话，松开后识别结
 
 | 文件 | 作用 |
 |---|---|
-| `stt-server.js` | 常驻的本地识别服务（Node，监听 127.0.0.1:8377）：用 ffmpeg 采集麦克风，用 sherpa-onnx 跑 SenseVoice 模型 |
+| `stt-server.js` | 常驻的本地识别服务（Node，监听 127.0.0.1:8377）：用 ffmpeg 采集麦克风，交给 llama.cpp 在显卡上跑 Qwen3-ASR 识别 |
 | `dictate.cs` | 客户端源码（WinForms）：全局鼠标钩子、热键、分层窗口浮窗，识别结果用 SendInput 打出去 |
 | `build.ps1` | 把 `dictate.cs` 编译成 `voice-dictate.exe` |
 
@@ -25,15 +25,12 @@ Windows 上的本地语音听写：按住鼠标侧键说话，松开后识别结
 - Windows 10 / 11
 - [Node.js](https://nodejs.org/)
 - [ffmpeg](https://ffmpeg.org/)，需要在 `PATH` 里（用它的 dshow 采集麦克风）
-- sherpa-onnx 的 Windows Node 插件（`sherpa-onnx-win-x64`）
-- SenseVoice 模型（`model.int8.onnx` + `tokens.txt`），支持中 / 英 / 日 / 韩 / 粤
+- [llama.cpp](https://github.com/ggml-org/llama.cpp/releases) 的 Windows Vulkan 版（`llama-bin-win-vulkan-x64.zip`），AMD / NVIDIA / Intel 显卡都能用
+- [ggml-org/Qwen3-ASR-1.7B-GGUF](https://huggingface.co/ggml-org/Qwen3-ASR-1.7B-GGUF) 的 `Qwen3-ASR-1.7B-Q8_0.gguf` 和 `mmproj-Qwen3-ASR-1.7B-Q8_0.gguf`（魔搭上有同名仓库，国内下得快）
 
-插件和模型都不在本仓库里。默认按 Orca 客户端自带的位置找：
+llama.cpp 和模型都不在本仓库里，默认路径是 `D:/models/llama.cpp/bin/llama-server.exe` 和 `D:/models/qwen3-asr-1.7b/`，放在别处就在 `config.json` 里改。
 
-- 插件：`%LOCALAPPDATA%\Programs\orca\resources\node_modules\sherpa-onnx-win-x64`
-- 模型：`%APPDATA%\orca\speech-models\sense-voice-zh-en-ja-ko-yue`
-
-放在别处就在 `config.json` 里改。
+显存：识别服务第一次按键时才启动（加载约 4 秒，和录音同时进行），常驻约 1.5GB；闲置 `asrIdleMinutes`（默认 10 分钟）后自动退出，显存全部释放。
 
 ## 构建与运行
 
@@ -53,8 +50,11 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 ```json
 {
   "mouseButton": "side2",
-  "sherpaModule": "D:/somewhere/sherpa-onnx-win-x64",
-  "modelDir": "D:/somewhere/sense-voice-zh-en-ja-ko-yue",
+  "llamaServer": "D:/models/llama.cpp/bin/llama-server.exe",
+  "asrModel": "D:/models/qwen3-asr-1.7b/Qwen3-ASR-1.7B-Q8_0.gguf",
+  "asrMmproj": "D:/models/qwen3-asr-1.7b/mmproj-Qwen3-ASR-1.7B-Q8_0.gguf",
+  "asrPort": 8378,
+  "asrIdleMinutes": 10,
   "ffmpeg": "ffmpeg",
   "port": 8377
 }
@@ -78,5 +78,5 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 
 ## 致谢
 
-- 识别模型 [SenseVoice](https://github.com/FunAudioLLM/SenseVoice)，运行时 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)
+- 识别模型 [Qwen3-ASR](https://huggingface.co/Qwen/Qwen3-ASR-1.7B)，运行时 [llama.cpp](https://github.com/ggml-org/llama.cpp)
 - 浮窗的音量条和"识别中"扫光分别移植自 [react-bits](https://github.com/DavidHDev/react-bits) 的 `SlicedWaves` 与 `ShinyText`
