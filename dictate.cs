@@ -63,7 +63,7 @@ public static class Mic {
     }
 }
 
-public enum Kind { Listening, Busy, Message }
+public enum Kind { Listening, Busy, Message, Notice }
 
 // Pure drawing of the dictation pill. Visual language from Lovable's prompt input
 // (claude-directory 3d-games/lovable-webgl-hero); meter ported from react-bits SlicedWaves,
@@ -229,6 +229,7 @@ public class Look {
         using (Pen border = new Pen(Color.FromArgb(158, 199, 255), 1f))
             g.DrawEllipse(border, cx - ChipR + 0.5f, cy - ChipR + 0.5f, ChipR * 2 - 1f, ChipR * 2 - 1f);
         if (Kind == Kind.Busy) ConicRing(g, cx, cy, 18f, 2f, (float)(StateTime / 1.5 % 1.0 * 360.0));
+        if (Kind == Kind.Notice) { Glyph(g, "", cx, cy, Color.White); return; }   // Segoe Fluent CheckMark
         Glyph(g, "", cx, cy, Color.White);
     }
 
@@ -383,6 +384,7 @@ public class Overlay : Form {
     public void ShowListening(string hint) { Post(Kind.Listening, "", hint, 0); }
     public void ShowBusy(string text, string hint) { Post(Kind.Busy, text, hint, 0); }
     public void ShowMessage(string text, int ms) { Post(Kind.Message, text, "", ms); }
+    public void ShowNotice(string text, int ms) { Post(Kind.Notice, text, "", ms); }
     public void HideNow() { BeginInvoke((MethodInvoker)delegate { wanted = false; }); }
 
     void Post(Kind kind, string text, string hint, int ms) {
@@ -489,6 +491,9 @@ public class App : ApplicationContext {
     HookProc hookRef;          // keep alive; the GC would otherwise collect the delegate
     IntPtr hook;
     HotkeyWindow hotkeyWin;
+    NotifyIcon tray;           // the only way to quit: right-click -> 退出语音输入
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern int ExtractIconEx(string file, int index, IntPtr[] large, IntPtr[] small, int n);
     int port;
     ushort wantButton;         // 1 = back side button, 2 = forward side button
 
@@ -515,6 +520,14 @@ public class App : ApplicationContext {
             hookThread.SetApartmentState(ApartmentState.STA);
             hookThread.Start();
         }
+
+        tray = new NotifyIcon();
+        tray.Icon = MicIcon();
+        tray.Text = "语音输入 · 按住鼠标侧键说话";
+        ContextMenu menu = new ContextMenu();
+        menu.MenuItems.Add("退出语音输入", delegate { Quit(); });
+        tray.ContextMenu = menu;
+        tray.Visible = true;
 
         hotkeyWin = new HotkeyWindow(this);
         RegisterHotKey(hotkeyWin.Handle, HOTKEY_TOGGLE, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_SPACE);
@@ -575,6 +588,23 @@ public class App : ApplicationContext {
             }
         }
         return CallNextHookEx(hook, code, wParam, lParam);
+    }
+
+    public void Announce(string text) { overlay.ShowNotice(text, 2600); }
+
+    // Same desk-microphone icon as the desktop shortcut (mmres.dll,5), small size for the tray.
+    static Icon MicIcon() {
+        IntPtr[] small = new IntPtr[1];
+        if (ExtractIconEx(Path.Combine(Environment.SystemDirectory, "mmres.dll"), 5, null, small, 1) > 0 && small[0] != IntPtr.Zero)
+            return Icon.FromHandle(small[0]);
+        return SystemIcons.Application;
+    }
+
+    // Quitting also stops the server and, through it, llama-server, so nothing keeps holding VRAM.
+    void Quit() {
+        tray.Visible = false;   // otherwise the icon lingers in the tray until the mouse passes over it
+        Call("/quit", 2000);
+        Environment.Exit(0);
     }
 
     public void Toggle() {
@@ -765,16 +795,38 @@ public static class Program {
         return "side2";
     }
 
+    [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+
+    // The desktop shortcut passes --announce so a double-click always shows something: a second
+    // instance otherwise exits silently and looks like the click did nothing. Autostart passes nothing.
     [STAThread]
-    public static void Main() {
+    public static void Main(string[] args) {
+        bool announce = Array.IndexOf(args, "--announce") >= 0;
         bool mine;
         using (Mutex only = new Mutex(true, "VoiceDictate.SingleInstance", out mine)) {
-            if (!mine) return;   // autostart and a manual launch must not both install a mouse hook
+            if (!mine) {   // autostart and a manual launch must not both install a mouse hook
+                if (announce) Notify("语音输入已在运行 · 右下角托盘图标右键可退出");
+                return;
+            }
             string root = Path.GetDirectoryName(Application.ExecutablePath);
             const int port = 8377;
             EnsureServer(root, port);
-            Application.Run(new App(port, MouseButton(Path.Combine(root, "config.json"))));
+            App app = new App(port, MouseButton(Path.Combine(root, "config.json")));
+            if (announce) app.Announce("语音输入已启动 · 按住鼠标侧键说话");
+            Application.Run(app);
         }
+    }
+
+    static void Notify(string text) {
+        SetProcessDPIAware();
+        Overlay overlay = new Overlay();
+        IntPtr forceHandle = overlay.Handle;   // BeginInvoke() needs the window to exist before first Show()
+        overlay.ShowNotice(text, 2200);
+        System.Windows.Forms.Timer quit = new System.Windows.Forms.Timer();
+        quit.Interval = 3000;   // message time plus the fade-out
+        quit.Tick += delegate { Application.ExitThread(); };
+        quit.Start();
+        Application.Run();
     }
 }
 }

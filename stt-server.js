@@ -3,6 +3,7 @@
 // GET /start?device=<capture endpoint GUID> -> "REC" once audio is flowing, 500 with the ffmpeg error otherwise
 // GET /stop   -> transcript; 422 "SILENT" when the mic delivered nothing but silence
 // GET /cancel -> stop and discard
+// GET /quit   -> stop llama-server and exit
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -289,6 +290,11 @@ http.createServer(async (req, res) => {
     case "/cancel":
       cancelRecording();
       return send(200, "");
+    case "/quit":
+      // the client's tray "退出" item; the exit handler below also stops llama-server
+      cancelRecording();
+      send(200, "BYE");
+      return setImmediate(() => process.exit(0));
     default:
       return send(404, "");
   }
