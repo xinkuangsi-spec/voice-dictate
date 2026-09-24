@@ -7,6 +7,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
+const { chineseToNum } = require("./chinese-itn");
 
 const cfgPath = path.join(__dirname, "config.json");
 const cfg = {
@@ -119,7 +120,15 @@ async function transcribe(samples) {
   // Qwen3-ASR answers "language Chinese<asr_text>..."; llama.cpp passes the prefix through (issue #26749)
   const out = j.choices[0].message.content;
   const at = out.indexOf("<asr_text>");
-  return (at >= 0 ? out.slice(at + "<asr_text>".length) : out).trim();
+  return normalizeNumbers((at >= 0 ? out.slice(at + "<asr_text>".length) : out).trim());
+}
+
+// Qwen3-ASR writes most numbers out in characters ("十六分钟"); SenseVoice used to emit digits.
+// The client converts Traditional to Simplified only after this, so fold the Traditional forms the
+// number rules look for first, or an occasional Traditional answer would keep its numbers spelled out.
+const TRAD_NUMBER_CHARS = { "兩": "两", "點": "点", "萬": "万", "億": "亿", "個": "个", "隻": "只", "鐘": "钟", "號": "号", "塊": "块", "層": "层", "時": "时", "幾": "几" };
+function normalizeNumbers(text) {
+  return chineseToNum(text.replace(/[兩點萬億個隻鐘號塊層時幾]/g, (c) => TRAD_NUMBER_CHARS[c]));
 }
 
 function blockStats(buf, skip) {

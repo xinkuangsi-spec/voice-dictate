@@ -15,6 +15,7 @@ Windows 上的本地语音听写：按住鼠标侧键说话，松开后识别结
 | 文件 | 作用 |
 |---|---|
 | `stt-server.js` | 常驻的本地识别服务（Node，监听 127.0.0.1:8377）：用 ffmpeg 采集麦克风，交给 llama.cpp 在显卡上跑 Qwen3-ASR 识别 |
+| `chinese-itn.js` | 把识别结果里的中文数字转成阿拉伯数字（"十六分钟"→"16分钟"、"百分之三十"→"30%"），成语和"十分重要"这类不动 |
 | `dictate.cs` | 客户端源码（WinForms）：全局鼠标钩子、热键、分层窗口浮窗，识别结果用 SendInput 打出去 |
 | `build.ps1` | 把 `dictate.cs` 编译成 `voice-dictate.exe` |
 
@@ -79,4 +80,5 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 ## 致谢
 
 - 识别模型 [Qwen3-ASR](https://huggingface.co/Qwen/Qwen3-ASR-1.7B)，运行时 [llama.cpp](https://github.com/ggml-org/llama.cpp)
+- `chinese-itn.js` 移植自 [CapsWriter-Offline](https://github.com/HaujetZhao/CapsWriter-Offline) 的 `chinese_itn.py`（MIT）
 - 浮窗的音量条和"识别中"扫光分别移植自 [react-bits](https://github.com/DavidHDev/react-bits) 的 `SlicedWaves` 与 `ShinyText`

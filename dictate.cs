@@ -476,6 +476,8 @@ public class App : ApplicationContext {
     [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint mod, uint vk);
     [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
     [DllImport("user32.dll")] static extern uint SendInput(uint n, INPUT[] inputs, int size);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern int LCMapStringEx(string locale, uint flags, string src, int srcLen, StringBuilder dst, int dstLen, IntPtr ver, IntPtr reserved, IntPtr sortHandle);
+    const uint LCMAP_SIMPLIFIED_CHINESE = 0x02000000;
 
     [StructLayout(LayoutKind.Sequential)] struct MSLLHOOKSTRUCT { public int x, y; public uint mouseData, flags, time; public IntPtr extra; }
     [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT { public ushort wVk, wScan; public uint dwFlags, time; public IntPtr dwExtraInfo; }
@@ -661,7 +663,7 @@ public class App : ApplicationContext {
         if (cancel) return;
         if (r.Status == 200 && r.Body.Length > 0) {
             overlay.HideNow();
-            TypeText(r.Body.Replace('\r', ' ').Replace('\n', ' '));
+            TypeText(ToSimplified(r.Body.Replace('\r', ' ').Replace('\n', ' ')));
         } else if (r.Status == 200) {
             overlay.ShowMessage("没识别到内容", 1800);
         } else if (r.Status == 422) {
@@ -701,6 +703,14 @@ public class App : ApplicationContext {
     static string ReadBody(HttpWebResponse res) {
         using (StreamReader sr = new StreamReader(res.GetResponseStream(), Encoding.UTF8))
             return sr.ReadToEnd().Trim();
+    }
+
+    // Qwen3-ASR has no script switch and now and then answers in Traditional Chinese. Traditional to
+    // Simplified is close to one-to-one, so Windows' per-character mapping is enough; Latin text is untouched.
+    static string ToSimplified(string text) {
+        StringBuilder sb = new StringBuilder(text.Length + 1);
+        int n = LCMapStringEx("zh-CN", LCMAP_SIMPLIFIED_CHINESE, text, text.Length, sb, sb.Capacity, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        return n > 0 ? sb.ToString(0, n) : text;
     }
 
     void TypeText(string text) {
